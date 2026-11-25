@@ -225,6 +225,10 @@ export default {
       if (path.startsWith("/api/ext/")) {
         await expireTimedOutTickets(env.DB);
 
+        if (method === "GET" && path === "/api/ext/ping") {
+          return jsonRes({ ok: true, service: "ai2human", ts: Date.now() });
+        }
+
         if (method === "POST" && path === "/api/ext/start") {
           const body = await readJson(req);
           if (!body || !body.clientToken) {
@@ -278,6 +282,46 @@ export default {
           return jsonRes(out);
         }
 
+        if (method === "POST" && path === "/api/ext/status") {
+          const body = await readJson(req);
+          if (!body || !body.clientToken) {
+            return jsonRes({ ok: false }, 400);
+          }
+          await env.DB.prepare(
+            `UPDATE tickets
+             SET is_generating = ?, updated_at = ?
+             WHERE client_token = ? AND chat_key = ? AND status != 'CLOSED'`
+          )
+            .bind(
+              body.isGenerating ? 1 : 0,
+              Date.now(),
+              String(body.clientToken),
+              String(body.chatKey || "/app")
+            )
+            .run();
+          return jsonRes({ ok: true });
+        }
+
+        if (method === "POST" && path === "/api/ext/rekey") {
+          const body = await readJson(req);
+          if (!body || !body.clientToken || !body.newChatKey) {
+            return jsonRes({ ok: false }, 400);
+          }
+          await env.DB.prepare(
+            `UPDATE tickets
+             SET chat_key = ?, updated_at = ?
+             WHERE client_token = ? AND chat_key = ? AND status != 'CLOSED'`
+          )
+            .bind(
+              String(body.newChatKey),
+              Date.now(),
+              String(body.clientToken),
+              String(body.oldChatKey || "/app")
+            )
+            .run();
+          return jsonRes({ ok: true });
+        }
+
         if (method === "GET" && path === "/api/ext/poll") {
           const clientToken = url.searchParams.get("clientToken") || "";
           if (!clientToken) {
@@ -293,16 +337,29 @@ export default {
             .bind(clientToken)
             .all();
 
-          if (msgs && msgs.length > 0) {
+          return jsonRes({ ok: true, deliveries: msgs || [] });
+        }
+
+        if (method === "POST" && path === "/api/ext/ack") {
+          const body = await readJson(req);
+          if (!body || !body.clientToken || !Array.isArray(body.messageIds)) {
+            return jsonRes({ ok: false }, 400);
+          }
+          const ids = body.messageIds
+            .map((x) => parseInt(x, 10))
+            .filter((n) => Number.isFinite(n));
+          if (ids.length > 0) {
+            const tok = String(body.clientToken);
             await env.DB.batch(
-              msgs.map((m) =>
-                env.DB.prepare("UPDATE messages SET delivered_to_ext = 1 WHERE id = ?").bind(
-                  m.id
-                )
+              ids.map((id) =>
+                env.DB.prepare(
+                  `UPDATE messages SET delivered_to_ext = 1
+                   WHERE id = ? AND ticket_id IN (SELECT id FROM tickets WHERE client_token = ?)`
+                ).bind(id, tok)
               )
             );
           }
-          return jsonRes({ ok: true, deliveries: msgs || [] });
+          return jsonRes({ ok: true });
         }
       }
 
@@ -396,7 +453,7 @@ export default {
                WHERE id = ?`
             ).bind(user.id, user.username, now, tid),
             env.DB.prepare(
-              `INSERT INTO messages (ticket_id, sender, author_user_id, author_name, text, delivered_to_ext, created_at)
+              `INSERT INTO messages (ticket_id, sender, author_name, text, delivered_to_ext, created_at)
                VALUES (?, 'SYSTEM', 'СИСТЕМА', ?, 1, ?)`
             ).bind(
               tid,
@@ -493,6 +550,12 @@ export default {
           if (!ticket.can_reply) {
             return jsonRes(
               { ok: false, error: "Ожидание нового обращения от Gemini в [[support]]." },
+              400
+            );
+          }
+          if (ticket.is_generating) {
+            return jsonRes(
+              { ok: false, error: "Gemini сейчас формирует ответ. Дождитесь завершения." },
               400
             );
           }
