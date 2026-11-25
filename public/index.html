@@ -1,1 +1,312 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ai2human — Панель управления поддержкой</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <div id="bootErrorBanner" class="boot-error hidden"></div>
 
+  <div id="authScreen" class="auth-shell hidden">
+    <div class="auth-window">
+      <div class="top-bar">
+        <span>ai2human — АВТОРИЗАЦИЯ СОТРУДНИКА</span>
+      </div>
+      <div class="auth-body">
+        <div id="setupFormBlock" class="hidden">
+          <div class="auth-notice">
+            Первичный запуск ai2human. В базе данных пока нет пользователей.
+            Введите секретный SETUP_KEY для создания главного администратора.
+          </div>
+          <label class="field-label">SETUP_KEY:</label>
+          <input id="setupKeyInput" type="password" class="input-field" />
+          <label class="field-label">Логин администратора:</label>
+          <input id="setupUserInput" type="text" class="input-field" />
+          <label class="field-label">Пароль (от 6 символов):</label>
+          <input id="setupPassInput" type="password" class="input-field" />
+          <div id="setupErr" class="err-box"></div>
+          <button id="setupSubmitBtn" class="btn btn-primary btn-full">Создать главного ADMIN</button>
+        </div>
+
+        <div id="loginTabsBlock" class="hidden">
+          <div class="subtabs">
+            <button id="tabBtnLogin" class="btn btn-small subtab-active">Вход</button>
+            <button id="tabBtnReg" class="btn btn-small">Регистрация по инвайту</button>
+          </div>
+
+          <div id="loginForm">
+            <label class="field-label">Логин:</label>
+            <input id="loginUserInput" type="text" class="input-field" />
+            <label class="field-label">Пароль:</label>
+            <input id="loginPassInput" type="password" class="input-field" />
+            <div id="loginErr" class="err-box"></div>
+            <button id="loginSubmitBtn" class="btn btn-primary btn-full">Войти в панель</button>
+          </div>
+
+          <div id="regForm" class="hidden">
+            <label class="field-label">Инвайт-код:</label>
+            <input id="regInviteInput" type="text" class="input-field" placeholder="A2H-..." />
+            <label class="field-label">Новый логин:</label>
+            <input id="regUserInput" type="text" class="input-field" />
+            <label class="field-label">Пароль (от 6 символов):</label>
+            <input id="regPassInput" type="password" class="input-field" />
+            <div id="regErr" class="err-box"></div>
+            <button id="regSubmitBtn" class="btn btn-primary btn-full">Зарегистрироваться</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="mainScreen" class="app-shell hidden">
+    <header class="top-bar">
+      <div class="top-bar-title">
+        ai2human — КОНСОЛЬ ОПЕРАТОРОВ И АДМИНИСТРАЦИИ [control-panel.ai2human.workers.dev]
+      </div>
+      <div class="top-bar-user">
+        <span id="currentUserBadge">—</span>
+        <button id="logoutBtn" class="btn btn-small">Выход</button>
+      </div>
+    </header>
+
+    <div class="nav-bar">
+      <button class="btn nav-btn nav-active" data-view="tickets">Тикеты и общий пул</button>
+      <button class="btn nav-btn" data-view="surveys">Опросы и Стандартный опросник</button>
+      <button id="navAdminBtn" class="btn nav-btn hidden" data-view="admin">Сотрудники, БД и Симулятор</button>
+      <div class="nav-right">
+        <button id="openStandardModalBtn" class="btn btn-small">Стандартный опрос (просмотр)</button>
+        <button id="refreshAllBtn" class="btn btn-small">Обновить</button>
+      </div>
+    </div>
+
+    <main id="viewTickets" class="workspace">
+      <section class="panel panel-left">
+        <div class="panel-header panel-header-flex">
+          <span>РЕЕСТР ТИКЕТОВ</span>
+          <select id="ticketFilter" class="filter-select">
+            <option value="ALL">Все тикеты</option>
+            <option value="OPEN">Ожидают и активные</option>
+            <option value="POOL">Общий пул (консилиум)</option>
+            <option value="CLOSED">Закрытые / Таймаут</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table class="ticket-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>СТАТУС</th>
+                <th>ОПЕРАТОР</th>
+                <th>ТАЙМЕР</th>
+              </tr>
+            </thead>
+            <tbody id="ticketListBody"></tbody>
+          </table>
+        </div>
+        <div class="panel-footer-hint">
+          Таймаут ожидания ответа поддержки: <b id="timeoutHintVal">30</b> мин.
+        </div>
+      </section>
+
+      <section class="panel panel-right">
+        <div class="panel-header panel-header-flex">
+          <span id="chatPanelHeader">ПРОТОКОЛ ВЗАИМОДЕЙСТВИЯ — ТИКЕТ НЕ ВЫБРАН</span>
+          <div class="header-actions">
+            <button id="claimBtn" class="btn btn-small" disabled>Взять себе</button>
+            <button id="escalateBtn" class="btn btn-small" disabled>В общий пул</button>
+            <button id="closeTicketBtn" class="btn btn-small" disabled>Закрыть тикет</button>
+            <button id="deleteTicketBtn" class="btn btn-small btn-danger" disabled>Удалить</button>
+          </div>
+        </div>
+
+        <div id="ticketStatusStrip" class="ticket-status-strip">
+          Выберите тикет из реестра слева.
+        </div>
+
+        <div class="subtabs chat-mode-tabs">
+          <button id="chatTabExternal" class="btn btn-small subtab-active">Канал с Gemini</button>
+          <button id="chatTabInternal" class="btn btn-small">Консилиум (Gemini не видит)</button>
+        </div>
+
+        <div id="chatLog" class="chat-log"></div>
+        <div id="internalLog" class="chat-log hidden"></div>
+
+        <div id="composerExternal" class="composer">
+          <div class="composer-bar">
+            <div class="composer-left-tools">
+              <label id="surveyCheckLabel" class="checkbox-label">
+                <input type="checkbox" id="isSurveyCheckbox" />
+                <span>Пометить как <b>ОПРОС</b> (для ИИ)</span>
+              </label>
+              <button id="insertStandardBtn" class="btn btn-small" disabled>Вставить из Стандартного опроса</button>
+            </div>
+            <span id="composerLockReason" class="lock-reason">ТИКЕТ НЕ ВЫБРАН</span>
+          </div>
+          <textarea id="replyInput" class="reply-textarea" placeholder="Введите ответ для Gemini (упакуется в [[supportresponse]])..." disabled></textarea>
+          <div class="composer-actions">
+            <div id="actionFeedback" class="action-feedback"></div>
+            <button id="sendReplyBtn" class="btn btn-primary" disabled>Отправить ответ (Ctrl+Enter)</button>
+          </div>
+        </div>
+
+        <div id="composerInternal" class="composer hidden">
+          <div class="composer-bar">
+            <span>СЛУЖЕБНОЕ СОВЕЩАНИЕ СОТРУДНИКОВ (НЕ ОТПРАВЛЯЕТСЯ GEMINI):</span>
+          </div>
+          <textarea id="internalInput" class="reply-textarea" placeholder="Обсудите спорный вопрос с коллегами..." disabled></textarea>
+          <div class="composer-actions">
+            <div></div>
+            <button id="sendInternalBtn" class="btn btn-primary" disabled>Написать в консилиум</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <main id="viewSurveys" class="workspace-single hidden">
+      <div class="two-col-grid">
+        <section class="panel">
+          <div class="panel-header panel-header-flex">
+            <span>ВНУТРЕННИЙ ОПРОС СОТРУДНИКОВ (ОЦЕНКА ВОПРОСОВ)</span>
+            <span id="pollStatusBadge" class="badge badge-closed">—</span>
+          </div>
+          <div id="surveyTriggerInfo" class="ticket-status-strip"></div>
+          <div id="surveyItemsList" class="scroll-box"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header panel-header-flex">
+            <span>АКТУАЛЬНЫЙ «СТАНДАРТНЫЙ ОПРОС»</span>
+            <button id="copyStandardBtn" class="btn btn-small">Копировать текст</button>
+          </div>
+          <div class="ticket-status-strip">
+            Автоматически формируется из вопросов, набравших больше голосов «Хороший вопрос».
+          </div>
+          <div id="standardSurveyBox" class="scroll-box mono-box"></div>
+        </section>
+      </div>
+    </main>
+
+    <main id="viewAdmin" class="workspace-single hidden">
+      <div class="three-col-grid">
+        <section class="panel">
+          <div class="panel-header">СОТРУДНИКИ И ИНВАЙТ-КОДЫ</div>
+          <div class="scroll-box">
+            <div class="admin-block">
+              <div class="admin-subtitle">Создать одноразовый инвайт-код:</div>
+              <div class="inline-row">
+                <select id="newInviteRole" class="filter-select">
+                  <option value="OPERATOR">OPERATOR</option>
+                  <option value="ADMIN">ADMIN</option>
+                </select>
+                <button id="createInviteBtn" class="btn btn-primary btn-small">Сгенерировать</button>
+              </div>
+              <div id="newInviteResult" class="mono-result"></div>
+            </div>
+            <div class="admin-subtitle">Неиспользованные и прошлые инвайты:</div>
+            <div id="invitesList" class="mini-list"></div>
+            <div class="admin-subtitle">Учётные записи:</div>
+            <div id="usersList" class="mini-list"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">ПАРАМЕТРЫ СИСТЕМЫ И БАЗА D1</div>
+          <div class="scroll-box">
+            <div class="admin-block">
+              <label class="field-label">Таймаут тикета без ответа (минут):</label>
+              <input id="settingTimeoutInput" type="number" min="1" max="1440" class="input-field" />
+              <label class="field-label">Порог отвеченных вопросов для запуска опроса:</label>
+              <input id="settingThresholdInput" type="number" min="1" max="500" class="input-field" />
+              <label class="checkbox-label" style="margin:6px 0;">
+                <input type="checkbox" id="settingManualPollCheck" />
+                <span>Принудительно открыть внутренний опрос</span>
+              </label>
+              <button id="saveSettingsBtn" class="btn btn-primary btn-small">Сохранить настройки</button>
+              <div id="settingsFeedback" class="action-feedback"></div>
+            </div>
+            <div class="admin-block">
+              <div class="admin-subtitle">Обслуживание базы тикетов:</div>
+              <div class="stack-btns">
+                <button id="adminDeleteClosedBtn" class="btn btn-small">Удалить все закрытые тикеты</button>
+                <button id="adminClearDbBtn" class="btn btn-small btn-danger">Очистить тикеты, логи и опросы</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">СИМУЛЯТОР GEMINI (ТЕСТ САЙТА БЕЗ РАСШИРЕНИЯ)</div>
+          <div class="scroll-box">
+            <div class="admin-notice">
+              Позволяет проверить весь цикл работы сайта (создание тикета, таймаут, опросник, пул) до подключения расширения.
+            </div>
+            <label class="field-label">Chat Key:</label>
+            <input id="simChatKeyInput" type="text" class="input-field" value="/app/test-chat" />
+            <button id="simStartBtn" class="btn btn-primary btn-small">1. start(support) от Gemini</button>
+            <hr class="sep-line" />
+            <label class="field-label">ID тикета для ответа от Gemini:</label>
+            <input id="simTicketIdInput" type="number" class="input-field" placeholder="Например, 1" />
+            <label class="field-label">Текст [[support]] от Gemini:</label>
+            <textarea id="simSupportText" class="reply-textarea" placeholder="Вопрос от Gemini (или ответ на опрос)..."></textarea>
+            <div class="inline-row" style="margin-top:6px;">
+              <button id="simSupportBtn" class="btn btn-primary btn-small">2. Отправить [[support]]</button>
+              <button id="simStopBtn" class="btn btn-small">3. stop(support)</button>
+            </div>
+            <div id="simFeedback" class="action-feedback" style="margin-top:6px;"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="status-bar">
+      <div class="status-cell">ai2human | Cloudflare Workers + D1</div>
+      <div class="status-cell" id="statusTicketsCount">ТИКЕТОВ: 0</div>
+      <div class="status-cell status-cell-grow" id="statusMainText">ГОТОВ К РАБОТЕ</div>
+    </footer>
+  </div>
+
+  <div id="ticketModal" class="modal-backdrop hidden">
+    <div class="modal-window">
+      <div class="modal-titlebar">
+        <span id="modalTitle">КАРТОЧКА ТИКЕТА</span>
+        <button id="modalCloseX" class="modal-x-btn">X</button>
+      </div>
+      <div class="modal-body">
+        <table class="modal-info-table">
+          <tr><th>Номер:</th><td id="mTicketId">—</td></tr>
+          <tr><th>Статус:</th><td id="mTicketStatus">—</td></tr>
+          <tr><th>Чат:</th><td id="mTicketChat">—</td></tr>
+          <tr><th>Создан:</th><td id="mTicketTime">—</td></tr>
+        </table>
+        <div id="mNotice" class="modal-notice"></div>
+        <div id="mError" class="err-box"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="mActivateBtn" class="btn btn-primary">Активировать тикет</button>
+        <button id="mOpenBtn" class="btn btn-secondary">Открыть журнал</button>
+        <button id="mCancelBtn" class="btn btn-secondary">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="standardModal" class="modal-backdrop hidden">
+    <div class="modal-window" style="width:560px;">
+      <div class="modal-titlebar">
+        <span>ПОСЛЕДНЯЯ ВЕРСИЯ СТАНДАРТНОГО ОПРОСА</span>
+        <button id="stdCloseX" class="modal-x-btn">X</button>
+      </div>
+      <div class="modal-body">
+        <textarea id="stdModalText" class="reply-textarea" style="height:260px;" readonly></textarea>
+      </div>
+      <div class="modal-footer">
+        <button id="stdCopyBtn" class="btn btn-primary">Копировать</button>
+        <button id="stdCloseBtn" class="btn btn-secondary">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
