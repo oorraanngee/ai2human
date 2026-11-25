@@ -40,6 +40,36 @@ async function readJson(req) {
   }
 }
 
+function splitSurveyQuestions(rawText) {
+  const lines = String(rawText || "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  if (lines.length <= 1) return [String(rawText || "").trim()];
+
+  const groups = [];
+  let current = [];
+
+  for (const line of lines) {
+    const isOptionContinuation =
+      /^(?:[а-яa-z]\)|[-•*]|\d+\)\s*[а-яa-z])/i.test(line) && !line.includes("?");
+    const looksLikeNewQuestion =
+      line.includes("?") ||
+      /^(?:вопрос\s*№?\s*\d+|\d+[.)]\s+)/i.test(line);
+
+    if (current.length > 0 && looksLikeNewQuestion && !isOptionContinuation) {
+      groups.push(current.join("\n"));
+      current = [line];
+    } else {
+      current.push(line);
+    }
+  }
+  if (current.length > 0) {
+    groups.push(current.join("\n"));
+  }
+  return groups.length > 0 ? groups : [String(rawText || "").trim()];
+}
+
 export default {
   async scheduled(_event, env) {
     if (!env.DB) return;
