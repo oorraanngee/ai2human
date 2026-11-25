@@ -249,6 +249,47 @@
 
     el("chatPanelHeader").textContent = `ПРОТОКОЛ — ТИКЕТ ${fmtId(t.id)} (${t.chat_key})`;
     el("ticketStatusStrip").textContent =
+      `СТАТУС: ${statusLabel(t)} | ОПЕРАТОР: ${t.assigned_username || "НЕТ"} | GEMINI: ${t.is_generating ? "ДУМАЕТ" : "ЖДЁТ"}` +
+      (t.pool_reason ? ` | ПУЛ: ${t.pool_reason}` : "") +
+      (t.waiting_since ? ` | ДО ТАЙМАУТА: ${fmtCountdown(t.waiting_since)}` : "");
+
+    el("claimBtn").disabled = t.status === "CLOSED";
+    el("escalateBtn").disabled = !(t.status === "ACTIVE" || t.status === "POOL");
+    el("closeTicketBtn").disabled = t.status === "CLOSED";
+    el("deleteTicketBtn").disabled = t.status !== "CLOSED";
+    el("internalInput").disabled = t.status === "CLOSED";
+    el("sendInternalBtn").disabled = t.status === "CLOSED";
+
+    renderMessageList(el("chatLog"), state.messages);
+    renderMessageList(el("internalLog"), state.internalMessages);
+
+    const canOpenInput = (t.status === "ACTIVE" || t.status === "POOL") && t.can_reply === 1;
+    const canSend = canOpenInput && !t.is_generating;
+    el("replyInput").disabled = !canOpenInput;
+    el("sendReplyBtn").disabled = !canSend;
+    el("insertStandardBtn").disabled = !canOpenInput;
+
+    if (t.status === "PENDING") {
+      el("composerLockReason").textContent = "ТИКЕТ НЕ АКТИВИРОВАН";
+      el("composerLockReason").className = "lock-reason";
+    } else if (t.status === "CLOSED") {
+      el("composerLockReason").textContent = "ТИКЕТ ЗАКРЫТ";
+      el("composerLockReason").className = "lock-reason";
+    } else if (!t.can_reply) {
+      el("composerLockReason").textContent = "ОЖИДАНИЕ [[support]] ОТ GEMINI";
+      el("composerLockReason").className = "lock-reason";
+    } else if (t.is_generating) {
+      el("composerLockReason").textContent = "БЛОКИРОВКА: GEMINI ФОРМИРУЕТ ОТВЕТ...";
+      el("composerLockReason").className = "lock-reason";
+    } else {
+      el("composerLockReason").textContent = "РАЗРЕШЕНО ОТПРАВИТЬ 1 ОТВЕТ";
+      el("composerLockReason").className = "lock-reason unlocked";
+    }
+    el("statusMainText").textContent = `ТИКЕТ ${fmtId(t.id)} — ${statusLabel(t)}`;
+  }
+
+    el("chatPanelHeader").textContent = `ПРОТОКОЛ — ТИКЕТ ${fmtId(t.id)} (${t.chat_key})`;
+    el("ticketStatusStrip").textContent =
       `СТАТУС: ${statusLabel(t)} | ОПЕРАТОР: ${t.assigned_username || "НЕТ"}` +
       (t.pool_reason ? ` | ПУЛ: ${t.pool_reason}` : "") +
       (t.waiting_since ? ` | ДО ТАЙМАУТА: ${fmtCountdown(t.waiting_since)}` : "");
