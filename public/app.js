@@ -17,6 +17,8 @@
   const el = (id) => document.getElementById(id);
 
   function showBootError(msg) {
+    const l = el("bootLoadingBanner");
+    if (l) l.classList.add("hidden");
     const b = el("bootErrorBanner");
     b.textContent = msg;
     b.classList.remove("hidden");
@@ -80,6 +82,9 @@
     el("bootErrorBanner").classList.add("hidden");
     try {
       const res = await api("/api/auth/me", "GET");
+      const l = el("bootLoadingBanner");
+      if (l) l.classList.add("hidden");
+
       if (!res || !res.ok) {
         showBootError((res && res.error) || "Не удалось подключиться к серверу.");
         return;
@@ -280,43 +285,6 @@
       el("composerLockReason").className = "lock-reason";
     } else if (t.is_generating) {
       el("composerLockReason").textContent = "БЛОКИРОВКА: GEMINI ФОРМИРУЕТ ОТВЕТ...";
-      el("composerLockReason").className = "lock-reason";
-    } else {
-      el("composerLockReason").textContent = "РАЗРЕШЕНО ОТПРАВИТЬ 1 ОТВЕТ";
-      el("composerLockReason").className = "lock-reason unlocked";
-    }
-    el("statusMainText").textContent = `ТИКЕТ ${fmtId(t.id)} — ${statusLabel(t)}`;
-  }
-
-    el("chatPanelHeader").textContent = `ПРОТОКОЛ — ТИКЕТ ${fmtId(t.id)} (${t.chat_key})`;
-    el("ticketStatusStrip").textContent =
-      `СТАТУС: ${statusLabel(t)} | ОПЕРАТОР: ${t.assigned_username || "НЕТ"}` +
-      (t.pool_reason ? ` | ПУЛ: ${t.pool_reason}` : "") +
-      (t.waiting_since ? ` | ДО ТАЙМАУТА: ${fmtCountdown(t.waiting_since)}` : "");
-
-    el("claimBtn").disabled = t.status === "CLOSED";
-    el("escalateBtn").disabled = !(t.status === "ACTIVE" || t.status === "POOL");
-    el("closeTicketBtn").disabled = t.status === "CLOSED";
-    el("deleteTicketBtn").disabled = t.status !== "CLOSED";
-    el("internalInput").disabled = t.status === "CLOSED";
-    el("sendInternalBtn").disabled = t.status === "CLOSED";
-
-    renderMessageList(el("chatLog"), state.messages);
-    renderMessageList(el("internalLog"), state.internalMessages);
-
-    const canSend = (t.status === "ACTIVE" || t.status === "POOL") && t.can_reply === 1;
-    el("replyInput").disabled = !canSend;
-    el("sendReplyBtn").disabled = !canSend;
-    el("insertStandardBtn").disabled = !canSend;
-
-    if (t.status === "PENDING") {
-      el("composerLockReason").textContent = "ТИКЕТ НЕ АКТИВИРОВАН";
-      el("composerLockReason").className = "lock-reason";
-    } else if (t.status === "CLOSED") {
-      el("composerLockReason").textContent = "ТИКЕТ ЗАКРЫТ";
-      el("composerLockReason").className = "lock-reason";
-    } else if (!t.can_reply) {
-      el("composerLockReason").textContent = "ОЖИДАНИЕ [[support]] ОТ GEMINI";
       el("composerLockReason").className = "lock-reason";
     } else {
       el("composerLockReason").textContent = "РАЗРЕШЕНО ОТПРАВИТЬ 1 ОТВЕТ";
