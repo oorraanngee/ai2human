@@ -7,6 +7,9 @@
   <link rel="stylesheet" href="/app.css" />
 </head>
 <body>
+  <div id="bootLoadingBanner" class="auth-notice" style="max-width:440px;margin:40px auto;">
+    Загрузка интерфейса ai2human...
+  </div>
   <div id="bootErrorBanner" class="boot-error hidden"></div>
 
   <div id="authScreen" class="auth-shell hidden">
@@ -307,6 +310,17 @@
     </div>
   </div>
 
+  <script>
+    window.addEventListener("error", function (e) {
+      var l = document.getElementById("bootLoadingBanner");
+      var b = document.getElementById("bootErrorBanner");
+      if (l) l.classList.add("hidden");
+      if (b) {
+        b.textContent = "Ошибка JS: " + (e.message || "Неизвестная ошибка") + " (строка " + (e.lineno || "?") + ")";
+        b.classList.remove("hidden");
+      }
+    });
+  </script>
   <script src="/app.js"></script>
 </body>
 </html>
