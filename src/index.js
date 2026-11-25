@@ -596,13 +596,18 @@ export default {
 
           let surveyItemId = null;
           if (isSurvey) {
-            const sRes = await env.DB.prepare(
-              `INSERT INTO survey_items (ticket_id, question_text, asked_by_user_id, asked_by_name, created_at)
-               VALUES (?, ?, ?, ?, ?)`
-            )
-              .bind(tid, safeBody, user.id, user.username, now)
-              .run();
-            surveyItemId = sRes.meta.last_row_id;
+            const questions = splitSurveyQuestions(safeBody);
+            for (const qText of questions) {
+              const sRes = await env.DB.prepare(
+                `INSERT INTO survey_items (ticket_id, question_text, asked_by_user_id, asked_by_name, created_at)
+                 VALUES (?, ?, ?, ?, ?)`
+              )
+                .bind(tid, qText, user.id, user.username, now)
+                .run();
+              if (surveyItemId === null) {
+                surveyItemId = sRes.meta.last_row_id;
+              }
+            }
           }
 
           await env.DB.batch([
