@@ -221,8 +221,15 @@
       const tag = m.is_survey_question ? " [ОПРОС]" : "";
       meta.textContent = `[${fmtTime(m.created_at)}] [${m.sender}: ${who}]${tag}`;
 
+      let displayText = m.text || "";
+      if (m.sender === "SUPPORT") {
+        displayText = displayText
+          .replace(/^\s*\[\[supportresponse\]\]\s*/i, "")
+          .replace(/\s*\[\[\/supportresponse\]\]\s*$/i, "");
+      }
+
       const body = document.createElement("div");
-      body.textContent = m.text;
+      body.textContent = displayText;
 
       box.append(meta, body);
       container.appendChild(box);
