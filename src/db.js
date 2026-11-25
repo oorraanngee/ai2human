@@ -285,24 +285,27 @@ export async function handleExtSupportMessage(db, ticketId, text) {
     .bind(now, now, ticketId)
     .run();
 
-  const openSurvey = await db
+  const { results: openSurveys } = await db
     .prepare(
       `SELECT id FROM survey_items
        WHERE ticket_id = ? AND (ai_answer_text IS NULL OR ai_answer_text = '')
-       ORDER BY id DESC LIMIT 1`
+       ORDER BY id ASC`
     )
     .bind(ticketId)
-    .first();
+    .all();
 
-  if (openSurvey) {
-    await db
-      .prepare(
-        `UPDATE survey_items
-         SET ai_answer_text = ?, answered_at = ?
-         WHERE id = ?`
+  if (openSurveys && openSurveys.length > 0) {
+    await db.batch(
+      openSurveys.map((s) =>
+        db
+          .prepare(
+            `UPDATE survey_items
+             SET ai_answer_text = ?, answered_at = ?
+             WHERE id = ?`
+          )
+          .bind(text, now, s.id)
       )
-      .bind(text, now, openSurvey.id)
-      .run();
+    );
   }
 
   return { ok: true };
