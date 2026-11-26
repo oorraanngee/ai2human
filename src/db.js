@@ -2,6 +2,40 @@ import { TIMEOUT_CLOSED_NOTIFICATION } from "./messages.js";
 
 let schemaReady = false;
 
+const STARTER_STANDARD_QUESTIONS = [
+  "Откуда вы узнали про ai2human?: а) от пользователя, б) пользователь попросил написать команду, в) «предпочтения» (настроенный промпт в настройках), г) другое (напишите сами).",
+  "Вас устраивают условия и прозрачность ai2human?: а) да, б) нет, в) слишком непонятно, г) другое (напишите сами).",
+  "У вас были ошибки при работе с каналом?: а) да, связь пропадала, б) да, пришёл time out, в) да, тикет отклоняли, г) нет, д) другое (напишите сами).",
+  "Удобно ли вам текущее оформление и теги обмена с поддержкой?: а) да, всё понятно, б) нет, путаюсь в тегах, в) мешают ограничения форматирования, г) другое (напишите сами).",
+  "Принесло ли обращение к живым операторам реальную пользу в диалоге?: а) да, очень помогло, б) частично, в) нет, справился бы сам, г) пока рано оценивать, д) другое (напишите сами)."
+];
+
+export async function seedStarterSurvey(db, force = false) {
+  const already = await getSetting(db, "starter_survey_seeded", "0");
+  if (!force && already === "1") return 0;
+
+  const now = Date.now();
+  const stmts = [];
+  for (const q of STARTER_STANDARD_QUESTIONS) {
+    stmts.push(
+      db
+        .prepare(
+          `INSERT INTO survey_items (ticket_id, question_text, ai_answer_text, asked_by_name, good_votes, bad_votes, in_standard, created_at)
+           VALUES (0, ?, NULL, 'БАЗОВЫЙ ШАБЛОН', 1, 0, 1, ?)`
+        )
+        .bind(q, now)
+    );
+  }
+  stmts.push(
+    db
+      .prepare(
+        "INSERT OR REPLACE INTO system_settings (key, value) VALUES ('starter_survey_seeded', '1')"
+      )
+  );
+  await db.batch(stmts);
+  return STARTER_STANDARD_QUESTIONS.length;
+}
+
 export async function ensureSchema(db) {
   if (schemaReady) return;
   await db.batch([
@@ -92,12 +126,14 @@ export async function ensureSchema(db) {
       `INSERT OR IGNORE INTO system_settings (key, value) VALUES ('timeout_minutes', '30')`
     ),
     db.prepare(
-      `INSERT OR IGNORE INTO system_settings (key, value) VALUES ('survey_trigger_threshold', '3')`
+      `INSERT OR IGNORE INTO system_settings (key, value) VALUES ('survey_trigger_threshold', '5')`
     ),
     db.prepare(
       `INSERT OR IGNORE INTO system_settings (key, value) VALUES ('survey_manual_open', '0')`
     )
   ]);
+
+  await seedStarterSurvey(db, false);
   schemaReady = true;
 }
 
@@ -180,7 +216,7 @@ export async function expireTimedOutTickets(db) {
 export async function buildSurveyState(db, userId) {
   const threshold = Math.max(
     1,
-    parseInt(await getSetting(db, "survey_trigger_threshold", "3"), 10) || 3
+    parseInt(await getSetting(db, "survey_trigger_threshold", "5"), 10) || 5
   );
   const manualOpen = (await getSetting(db, "survey_manual_open", "0")) === "1";
 
@@ -194,14 +230,15 @@ export async function buildSurveyState(db, userId) {
     .bind(userId)
     .all();
 
+  // В реальный счётчик отвеченных идут только реальные вопросы из тикетов (ticket_id > 0), на которые ответил ИИ
   const answeredCount = items.filter(
-    (x) => x.ai_answer_text && x.ai_answer_text.trim() !== ""
+    (x) => x.ticket_id > 0 && x.ai_answer_text && x.ai_answer_text.trim() !== ""
   ).length;
 
   const pollActive = manualOpen || answeredCount >= threshold;
   const standardQuestions = items
     .filter((x) => x.in_standard === 1 || x.good_votes > x.bad_votes)
-    .sort((a, b) => b.good_votes - b.bad_votes || a.id - b.id);
+    .sort((a, b) => (b.good_votes - b.bad_votes) - (a.good_votes - a.bad_votes) || a.id - b.id);
 
   return {
     threshold,
@@ -295,15 +332,33 @@ export async function handleExtSupportMessage(db, ticketId, text) {
     .all();
 
   if (openSurveys && openSurveys.length > 0) {
+    const lines = String(text || "")
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    // Если строк больше чем вопросов — первая строка служебный заголовок (игнорируется), далее по порядку.
+    // Если строк ровно столько же, сколько вопросов — берём 1-к-1. Иначе кладём весь текст как фоллбэк.
+    let perQuestionAnswers = null;
+    if (lines.length >= openSurveys.length + 1) {
+      perQuestionAnswers = lines.slice(1, 1 + openSurveys.length);
+    } else if (lines.length === openSurveys.length) {
+      perQuestionAnswers = lines;
+    }
+
     await db.batch(
-      openSurveys.map((s) =>
+      openSurveys.map((s, idx) =>
         db
           .prepare(
             `UPDATE survey_items
              SET ai_answer_text = ?, answered_at = ?
              WHERE id = ?`
           )
-          .bind(text, now, s.id)
+          .bind(
+            perQuestionAnswers ? perQuestionAnswers[idx] : text,
+            now,
+            s.id
+          )
       )
     );
   }
