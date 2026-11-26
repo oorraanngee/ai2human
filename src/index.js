@@ -12,6 +12,7 @@ import {
 } from "./auth.js";
 import {
   ensureSchema,
+  seedStarterSurvey,
   getSetting,
   setSetting,
   expireTimedOutTickets,
@@ -641,6 +642,12 @@ export default {
           let surveyItemId = null;
           if (isSurvey) {
             const questions = splitSurveyQuestions(safeBody);
+            if (questions.length > 5) {
+              return jsonRes(
+                { ok: false, error: "В одном опросе допускается не более 5 вопросов." },
+                400
+              );
+            }
             for (const qText of questions) {
               const sRes = await env.DB.prepare(
                 `INSERT INTO survey_items (ticket_id, question_text, asked_by_user_id, asked_by_name, created_at)
@@ -764,6 +771,14 @@ export default {
             env.DB.prepare("DELETE FROM tickets")
           ]);
           return jsonRes({ ok: true });
+        }
+
+        if (method === "POST" && path === "/api/panel/surveys/seed-starter") {
+          if (user.role !== "ADMIN") {
+            return jsonRes({ ok: false, error: "Только для ADMIN." }, 403);
+          }
+          const count = await seedStarterSurvey(env.DB, true);
+          return jsonRes({ ok: true, count });
         }
 
         const voteMatch = path.match(/^\/api\/panel\/surveys\/(\d+)\/vote$/);
