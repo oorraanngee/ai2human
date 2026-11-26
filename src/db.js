@@ -10,13 +10,39 @@ const STARTER_STANDARD_QUESTIONS = [
   "Принесло ли обращение к живым операторам реальную пользу в диалоге?: а) да, очень помогло, б) частично, в) нет, справился бы сам, г) пока рано оценивать, д) другое (напишите сами)."
 ];
 
+export async function deduplicateStarterSurvey(db) {
+  await db.batch([
+    db.prepare(
+      `DELETE FROM survey_items
+       WHERE ticket_id = 0
+         AND id NOT IN (
+           SELECT MIN(id) FROM survey_items WHERE ticket_id = 0 GROUP BY question_text
+         )`
+    ),
+    db.prepare(
+      "DELETE FROM survey_votes WHERE survey_item_id NOT IN (SELECT id FROM survey_items)"
+    )
+  ]);
+}
+
 export async function seedStarterSurvey(db, force = false) {
   const already = await getSetting(db, "starter_survey_seeded", "0");
   if (!force && already === "1") return 0;
 
+  await deduplicateStarterSurvey(db);
+
+  const { results: existingRows } = await db
+    .prepare("SELECT question_text FROM survey_items WHERE ticket_id = 0")
+    .all();
+  const existingSet = new Set((existingRows || []).map((r) => r.question_text));
+
   const now = Date.now();
   const stmts = [];
+  let added = 0;
+
   for (const q of STARTER_STANDARD_QUESTIONS) {
+    if (existingSet.has(q)) continue;
+    added++;
     stmts.push(
       db
         .prepare(
@@ -26,14 +52,17 @@ export async function seedStarterSurvey(db, force = false) {
         .bind(q, now)
     );
   }
+
   stmts.push(
-    db
-      .prepare(
-        "INSERT OR REPLACE INTO system_settings (key, value) VALUES ('starter_survey_seeded', '1')"
-      )
+    db.prepare(
+      "INSERT OR REPLACE INTO system_settings (key, value) VALUES ('starter_survey_seeded', '1')"
+    )
   );
-  await db.batch(stmts);
-  return STARTER_STANDARD_QUESTIONS.length;
+
+  if (stmts.length > 0) {
+    await db.batch(stmts);
+  }
+  return added;
 }
 
 export async function ensureSchema(db) {
@@ -133,6 +162,7 @@ export async function ensureSchema(db) {
     )
   ]);
 
+  await deduplicateStarterSurvey(db);
   await seedStarterSurvey(db, false);
   schemaReady = true;
 }
@@ -230,15 +260,31 @@ export async function buildSurveyState(db, userId) {
     .bind(userId)
     .all();
 
-  // В реальный счётчик отвеченных идут только реальные вопросы из тикетов (ticket_id > 0), на которые ответил ИИ
   const answeredCount = items.filter(
     (x) => x.ticket_id > 0 && x.ai_answer_text && x.ai_answer_text.trim() !== ""
   ).length;
 
   const pollActive = manualOpen || answeredCount >= threshold;
-  const standardQuestions = items
+
+  const ranked = items
     .filter((x) => x.in_standard === 1 || x.good_votes > x.bad_votes)
-    .sort((a, b) => (b.good_votes - b.bad_votes) - (a.good_votes - a.bad_votes) || a.id - b.id);
+    .sort(
+      (a, b) =>
+        b.good_votes - b.bad_votes - (a.good_votes - a.bad_votes) ||
+        b.ticket_id - a.ticket_id ||
+        a.id - b.id
+    );
+
+  // Дедупликация по тексту вопроса и ограничение до 5 лучших вопросов
+  const seenQ = new Set();
+  const standardQuestions = [];
+  for (const item of ranked) {
+    const key = String(item.question_text || "").trim();
+    if (!key || seenQ.has(key)) continue;
+    seenQ.add(key);
+    standardQuestions.push(item);
+    if (standardQuestions.length >= 5) break;
+  }
 
   return {
     threshold,
@@ -337,8 +383,6 @@ export async function handleExtSupportMessage(db, ticketId, text) {
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
 
-    // Если строк больше чем вопросов — первая строка служебный заголовок (игнорируется), далее по порядку.
-    // Если строк ровно столько же, сколько вопросов — берём 1-к-1. Иначе кладём весь текст как фоллбэк.
     let perQuestionAnswers = null;
     if (lines.length >= openSurveys.length + 1) {
       perQuestionAnswers = lines.slice(1, 1 + openSurveys.length);
