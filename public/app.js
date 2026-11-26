@@ -300,15 +300,15 @@
     el("statusMainText").textContent = `ТИКЕТ ${fmtId(t.id)} — ${statusLabel(t)}`;
   }
 
+  // Чистый текст для вставки/копирования в нейросеть — БЕЗ цифр, заголовков и служебных голосов [+1 / -0]
   function buildStandardSurveyText(items) {
     if (!items || items.length === 0) {
-      return "Стандартный опрос пока не сформирован. Отправьте вопросы с пометкой [Опрос] и проголосуйте за лучшие во внутреннем опросе.";
+      return "Стандартный опрос пока не сформирован.";
     }
-    const lines = ["СТАНДАРТНЫЙ ОПРОС (АКТУАЛЬНАЯ ВЕРСИЯ):", ""];
-    items.forEach((it, idx) => {
-      lines.push(`${idx + 1}. ${it.question_text} [+${it.good_votes} / -${it.bad_votes}]`);
-    });
-    return lines.join("\n");
+    return items
+      .slice(0, 5)
+      .map((it) => it.question_text)
+      .join("\n");
   }
 
   function renderSurveys() {
@@ -699,7 +699,9 @@
     const res = await api("/api/panel/surveys/seed-starter", "POST");
     el("settingsFeedback").textContent =
       res && res.ok
-        ? `Стартовый шаблон добавлен (${res.count} вопр.).`
+        ? res.count > 0
+          ? `Стартовый шаблон добавлен (${res.count} вопр.).`
+          : "Все стартовые вопросы уже есть в базе."
         : "Не удалось добавить шаблон.";
     refreshPanel();
   });
