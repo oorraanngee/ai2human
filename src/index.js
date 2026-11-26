@@ -277,13 +277,33 @@ export default {
           if (!body || !body.clientToken || !body.text) {
             return jsonRes({ ok: false, error: "Некорректные данные." }, 400);
           }
-          const ticket = await env.DB.prepare(
+          const clientToken = String(body.clientToken);
+          const chatKey = String(body.chatKey || "/app");
+
+          let ticket = await env.DB.prepare(
             `SELECT * FROM tickets
              WHERE client_token = ? AND chat_key = ? AND status IN ('ACTIVE', 'POOL')
              ORDER BY id DESC LIMIT 1`
           )
-            .bind(String(body.clientToken), String(body.chatKey || "/app"))
+            .bind(clientToken, chatKey)
             .first();
+
+          // Если тикет был создан до смены URL с /app на /app/<id>, перепривязываем его автоматически
+          if (!ticket && chatKey.startsWith("/app/")) {
+            ticket = await env.DB.prepare(
+              `SELECT * FROM tickets
+               WHERE client_token = ? AND chat_key = '/app' AND status IN ('ACTIVE', 'POOL')
+               ORDER BY id DESC LIMIT 1`
+            )
+              .bind(clientToken)
+              .first();
+            if (ticket) {
+              await env.DB.prepare("UPDATE tickets SET chat_key = ? WHERE id = ?")
+                .bind(chatKey, ticket.id)
+                .run();
+            }
+          }
+
           if (!ticket) {
             return jsonRes({ ok: false, error: "Активный тикет не найден." }, 404);
           }
@@ -300,13 +320,27 @@ export default {
           if (!body || !body.clientToken) {
             return jsonRes({ ok: false, error: "clientToken обязателен." }, 400);
           }
-          const ticket = await env.DB.prepare(
+          const clientToken = String(body.clientToken);
+          const chatKey = String(body.chatKey || "/app");
+
+          let ticket = await env.DB.prepare(
             `SELECT id FROM tickets
              WHERE client_token = ? AND chat_key = ? AND status != 'CLOSED'
              ORDER BY id DESC LIMIT 1`
           )
-            .bind(String(body.clientToken), String(body.chatKey || "/app"))
+            .bind(clientToken, chatKey)
             .first();
+
+          if (!ticket && chatKey.startsWith("/app/")) {
+            ticket = await env.DB.prepare(
+              `SELECT id FROM tickets
+               WHERE client_token = ? AND chat_key = '/app' AND status != 'CLOSED'
+               ORDER BY id DESC LIMIT 1`
+            )
+              .bind(clientToken)
+              .first();
+          }
+
           if (!ticket) return jsonRes({ ok: false });
           const out = await handleExtStop(env.DB, ticket.id);
           return jsonRes(out);
@@ -317,18 +351,28 @@ export default {
           if (!body || !body.clientToken) {
             return jsonRes({ ok: false }, 400);
           }
-          await env.DB.prepare(
+          const clientToken = String(body.clientToken);
+          const chatKey = String(body.chatKey || "/app");
+          const isGen = body.isGenerating ? 1 : 0;
+          const now = Date.now();
+
+          const upd = await env.DB.prepare(
             `UPDATE tickets
              SET is_generating = ?, updated_at = ?
              WHERE client_token = ? AND chat_key = ? AND status != 'CLOSED'`
           )
-            .bind(
-              body.isGenerating ? 1 : 0,
-              Date.now(),
-              String(body.clientToken),
-              String(body.chatKey || "/app")
-            )
+            .bind(isGen, now, clientToken, chatKey)
             .run();
+
+          if ((!upd.meta || upd.meta.changes === 0) && chatKey.startsWith("/app/")) {
+            await env.DB.prepare(
+              `UPDATE tickets
+               SET chat_key = ?, is_generating = ?, updated_at = ?
+               WHERE client_token = ? AND chat_key = '/app' AND status != 'CLOSED'`
+            )
+              .bind(chatKey, isGen, now, clientToken)
+              .run();
+          }
           return jsonRes({ ok: true });
         }
 
