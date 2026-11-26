@@ -320,7 +320,7 @@
     el("pollStatusBadge").className = s.pollActive ? "badge badge-active" : "badge badge-pending";
 
     el("surveyTriggerInfo").textContent =
-      `Отвеченных опросных вопросов: ${s.answeredCount} | Порог запуска: ${s.threshold} | Всего вопросов [Опрос]: ${s.totalCount}`;
+      `Отвеченных опросных вопросов: ${s.answeredCount} | Порог запуска: ${s.threshold} | Всего записей в базе опросов: ${s.totalCount}`;
 
     el("standardSurveyBox").textContent = buildStandardSurveyText(s.standardQuestions);
 
@@ -343,7 +343,10 @@
 
       const head = document.createElement("div");
       head.className = "survey-card-head";
-      head.textContent = `Вопрос #${it.id} | Тикет ${fmtId(it.ticket_id)} | Автор: ${it.asked_by_name || "ADMIN"}`;
+      head.textContent =
+        it.ticket_id === 0
+          ? `Шаблон #${it.id} | ${it.asked_by_name || "БАЗОВЫЙ ШАБЛОН"}`
+          : `Вопрос #${it.id} | Тикет ${fmtId(it.ticket_id)} | Автор: ${it.asked_by_name || "ADMIN"}`;
 
       const q = document.createElement("div");
       q.className = "survey-q";
@@ -351,7 +354,11 @@
 
       const a = document.createElement("div");
       a.className = "survey-a";
-      a.textContent = it.ai_answer_text ? `Ответ ИИ: ${it.ai_answer_text}` : "Ожидается ответ ИИ...";
+      a.textContent = it.ai_answer_text
+        ? `Ответ ИИ: ${it.ai_answer_text}`
+        : it.ticket_id === 0
+        ? "Ответ ИИ: (базовый вопрос для старта)"
+        : "Ожидается ответ ИИ...";
 
       const votes = document.createElement("div");
       votes.className = "survey-votes";
@@ -646,12 +653,12 @@
 
   el("insertStandardBtn").addEventListener("click", () => {
     if (!state.surveyState) return;
-    const items = state.surveyState.standardQuestions || [];
+    const items = (state.surveyState.standardQuestions || []).slice(0, 5);
     if (items.length === 0) {
       el("actionFeedback").textContent = "Стандартный опрос пока пуст.";
       return;
     }
-    const txt = items.map((it, idx) => `${idx + 1}) ${it.question_text}`).join("\n");
+    const txt = items.map((it) => it.question_text).join("\n");
     el("replyInput").value = (el("replyInput").value ? el("replyInput").value + "\n\n" : "") + txt;
     if (state.user && state.user.role === "ADMIN") el("isSurveyCheckbox").checked = true;
   });
@@ -681,10 +688,19 @@
   el("saveSettingsBtn").addEventListener("click", async () => {
     const res = await api("/api/panel/settings", "POST", {
       timeoutMinutes: parseInt(el("settingTimeoutInput").value, 10) || 30,
-      surveyTriggerThreshold: parseInt(el("settingThresholdInput").value, 10) || 3,
+      surveyTriggerThreshold: parseInt(el("settingThresholdInput").value, 10) || 5,
       surveyManualOpen: el("settingManualPollCheck").checked
     });
     el("settingsFeedback").textContent = res && res.ok ? "Настройки сохранены." : "Ошибка сохранения.";
+    refreshPanel();
+  });
+
+  el("adminSeedStarterBtn").addEventListener("click", async () => {
+    const res = await api("/api/panel/surveys/seed-starter", "POST");
+    el("settingsFeedback").textContent =
+      res && res.ok
+        ? `Стартовый шаблон добавлен (${res.count} вопр.).`
+        : "Не удалось добавить шаблон.";
     refreshPanel();
   });
 
